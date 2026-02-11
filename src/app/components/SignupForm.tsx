@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { getSupabase } from "@/lib/supabase";
+import { useRef, useState } from "react";
+import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 
 export default function SignupForm() {
   const [form, setForm] = useState({
@@ -15,6 +15,8 @@ export default function SignupForm() {
     "idle" | "loading" | "success" | "error"
   >("idle");
   const [errorMsg, setErrorMsg] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileInstance>(null);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -24,26 +26,32 @@ export default function SignupForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!turnstileToken) {
+      setErrorMsg("Por favor completa la verificación de seguridad.");
+      setStatus("error");
+      return;
+    }
+
     setStatus("loading");
     setErrorMsg("");
 
-    const { error } = await getSupabase().from("early_signups").insert([
-      {
-        nombre: form.nombre.trim(),
-        email: form.email.trim().toLowerCase(),
-        telefono: form.telefono.trim() || null,
-        nombre_negocio: form.nombre_negocio.trim(),
-        giro_negocio: form.giro_negocio.trim() || null,
-      },
-    ]);
+    const res = await fetch("/api/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...form,
+        turnstileToken,
+      }),
+    });
 
-    if (error) {
-      if (error.code === "23505") {
-        setErrorMsg("Este correo ya está registrado. ¡Ya tienes tu lugar!");
-      } else {
-        setErrorMsg("Hubo un error. Intenta de nuevo.");
-      }
+    const data = await res.json();
+
+    if (!res.ok) {
+      setErrorMsg(data.error);
       setStatus("error");
+      turnstileRef.current?.reset();
+      setTurnstileToken(null);
     } else {
       setStatus("success");
       setForm({
@@ -170,6 +178,16 @@ export default function SignupForm() {
         </div>
       </div>
 
+      <div className="flex justify-center">
+        <Turnstile
+          ref={turnstileRef}
+          siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!}
+          onSuccess={setTurnstileToken}
+          onError={() => setTurnstileToken(null)}
+          onExpire={() => setTurnstileToken(null)}
+        />
+      </div>
+
       {status === "error" && (
         <p className="text-red-600 text-sm bg-red-50 p-3 rounded-xl">
           {errorMsg}
@@ -178,7 +196,7 @@ export default function SignupForm() {
 
       <button
         type="submit"
-        disabled={status === "loading"}
+        disabled={status === "loading" || !turnstileToken}
         className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-bold py-4 px-6 rounded-xl transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] text-lg cursor-pointer"
       >
         {status === "loading" ? "Registrando..." : "¡Quiero ser de los primeros!"}
