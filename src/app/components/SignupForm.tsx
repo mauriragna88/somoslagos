@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
+import { track } from "@vercel/analytics";
 
 export default function SignupForm() {
   const [form, setForm] = useState({
@@ -53,6 +54,7 @@ export default function SignupForm() {
       turnstileRef.current?.reset();
       setTurnstileToken(null);
     } else {
+      track("signup", { email: form.email, nombre_negocio: form.nombre_negocio });
       setStatus("success");
       setForm({
         nombre: "",
